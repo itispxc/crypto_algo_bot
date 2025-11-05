@@ -1,0 +1,20 @@
+version: '3.8'
+
+services:
+  trading-bot:
+    build: .
+    container_name: crypto-trading-bot
+    restart: unless-stopped
+    environment:
+      - ROOSTOO_API_KEY=${ROOSTOO_API_KEY}
+      - ROOSTOO_API_SECRET=${ROOSTOO_API_SECRET}
+      - ROOSTOO_BASE_URL=${ROOSTOO_BASE_URL:-https://api.roostoo.com}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+    volumes:
+      - ./trading_bot.log:/app/trading_bot.log
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
