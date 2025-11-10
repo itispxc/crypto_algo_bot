@@ -8,6 +8,7 @@ import time
 from .data_classes import PortfolioState, MarketSnapshot
 from .data_client import DataClient
 from .utils import precision_round, amount_precision_for
+from .risk import check_stop_losses
 
 logger = logging.getLogger(__name__)
 
@@ -114,8 +115,6 @@ def apply_stops_and_tps(state: PortfolioState,
     Returns:
         List of order IDs placed
     """
-    from risk import check_stop_losses
-    
     orders = []
     to_sell = check_stop_losses(state, snapshots, config)
     

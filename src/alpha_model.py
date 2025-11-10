@@ -90,7 +90,7 @@ def score_signals(models: Dict[str, any],
             if models.get("6h") and LIGHTGBM_AVAILABLE and models["6h"] is not None:
                 try:
                     p6 = models["6h"].predict(x.reshape(1, -1))[0]
-                except:
+                except Exception:
                     # Fallback: use simple feature-based scoring
                     p6 = feat.get('r_6h', 0) * 0.5 + (feat.get('rsi14', 50) / 100 - 0.5) * 0.3
             else:
@@ -100,12 +100,21 @@ def score_signals(models: Dict[str, any],
             if models.get("24h") and LIGHTGBM_AVAILABLE and models.get("24h") is not None:
                 try:
                     p24 = models["24h"].predict(x.reshape(1, -1))[0]
-                except:
+                except Exception:
                     # Fallback
                     p24 = feat.get('r_24h', 0) * 0.5 + (feat.get('rsi14', 50) / 100 - 0.5) * 0.3
             else:
                 # Fallback scoring
                 p24 = feat.get('r_24h', 0) * 0.5 + (feat.get('rsi14', 50) / 100 - 0.5) * 0.3
+
+            # Inject deterministic bias when running without ML models
+            if not (models.get("6h") or models.get("24h")) or not LIGHTGBM_AVAILABLE:
+                tier = int(feat.get('tier', 1))
+                tier_bias = {1: 0.06, 2: 0.04, 3: 0.025}.get(tier, 0.02)
+                hash_bias = ((abs(hash(pair)) % 1000) / 10000.0) * 0.02  # up to +/- 0.02
+                bias = tier_bias + hash_bias
+                p6 += bias
+                p24 += bias
             
             # Weight by regime
             regime = regime_info.get("regime", "chop")

@@ -3,6 +3,42 @@ exchange:
   min_order_usd: 100
   rate_limit_ms: 800
 
+horus:
+  enabled: true
+  base_url: https://api-horus.com
+  candles_endpoint: /market/candles
+  timeout: 10
+  api_key:
+  api_key_env: HORUS_API_KEY
+  symbol_map:
+    BTC/USD: BTCUSD
+    ETH/USD: ETHUSD
+    SOL/USD: SOLUSD
+    BNB/USD: BNBUSD
+    XRP/USD: XRPUSD
+    DOGE/USD: DOGEUSD
+    AVAX/USD: AVAXUSD
+    LINK/USD: LINKUSD
+    TON/USD: TONUSD
+    ADA/USD: ADAUSD
+    NEAR/USD: NEARUSD
+    TRX/USD: TRXUSD
+    ICP/USD: ICPUSD
+    SUI/USD: SUIUSD
+    DOT/USD: DOTUSD
+    FIL/USD: FILUSD
+    UNI/USD: UNIUSD
+    APT/USD: APTUSD
+    PENDLE/USD: PENDLEUSD
+    WLD/USD: WLDUSD
+    SEI/USD: SEIUSD
+    BONK/USD: BONKUSD
+    PEPE/USD: PEPEUSD
+    FLOKI/USD: FLOKIUSD
+    WIF/USD: WIFUSD
+    PUMP/USD: PUMPUSD
+    1000CHEEMS/USD: 1000CHEEMSUSD
+
 universe:
   tier1:
     - BTC/USD
@@ -50,7 +86,7 @@ scheduling:
 
 signals:
   score_threshold: 0.02
-  hysteresis_weight_change: 0.03
+  hysteresis_weight_change: 0.02
   top_k_normal: 8
   top_k_chop: 6
   top_k_down: 4

@@ -16,6 +16,7 @@ sys.path.insert(0, parent_dir)
 from src.data_classes import Candle, MarketSnapshot, PortfolioState, Position
 from roostoo_client import RoostooClient
 from config import Config
+from horus_client import create_horus_client
 
 logger = logging.getLogger(__name__)
 
@@ -37,6 +38,11 @@ class DataClient:
             api_secret=self.roostoo_config.ROOSTOO_API_SECRET,
             base_url=self.roostoo_config.ROOSTOO_BASE_URL
         )
+        horus_cfg = config.get("horus", {})
+        self.horus_client = create_horus_client(horus_cfg)
+        self.horus_symbol_map = horus_cfg.get("symbol_map", {}) if horus_cfg else {}
+        if self.horus_client:
+            logger.info("Horus data source enabled.")
         self.exchange_info = None
         self._load_exchange_info()
     
@@ -61,13 +67,11 @@ class DataClient:
             List of Candle objects
         """
         try:
-            # Note: Roostoo API may not have klines endpoint
-            # For now, we'll use ticker data to create synthetic candles
-            # In production, you'd want to implement proper historical data fetching
-            
-            # Try to get klines from API
+            candles = self._get_horus_candles(pair, interval, limit)
+            if candles:
+                return candles
+
             klines = self.client.get_klines(pair, interval=interval, limit=limit)
-            
             if not klines:
                 # Fallback: create synthetic candles from ticker
                 logger.warning(f"No klines for {pair}, using ticker data")
@@ -129,6 +133,43 @@ class DataClient:
             except:
                 pass
             return []
+
+    def _map_horus_symbol(self, pair: str) -> Optional[str]:
+        """
+        Map a Roostoo pair into the Horus symbol space.
+        """
+        if pair in self.horus_symbol_map:
+            return self.horus_symbol_map[pair]
+        # Simple default: remove the slash
+        return pair.replace("/", "") if pair else None
+
+    def _get_horus_candles(self, pair: str, interval: str, limit: int) -> List[Candle]:
+        """
+        Try to fetch candles from the Horus API if configured.
+        """
+        if not self.horus_client:
+            return []
+
+        symbol = self._map_horus_symbol(pair)
+        if not symbol:
+            return []
+
+        raw_candles = self.horus_client.get_candles(symbol, interval=interval, limit=limit)
+        candles: List[Candle] = []
+        for item in raw_candles:
+            try:
+                candles.append(Candle(
+                    ts=int(item["timestamp"]),
+                    open=float(item["open"]),
+                    high=float(item["high"]),
+                    low=float(item["low"]),
+                    close=float(item["close"]),
+                    volume=float(item.get("volume", 0.0))
+                ))
+            except Exception as exc:
+                logger.debug(f"Skipping malformed Horus candle for {pair}: {exc}")
+                continue
+        return candles
     
     def get_snapshot(self, pair: str) -> Optional[MarketSnapshot]:
         """
