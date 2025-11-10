@@ -5,7 +5,7 @@ exchange:
 
 binance:
   enabled: true
-  base_url: https://api.binance.com
+  base_url: https://data-api.binance.vision
   candles_endpoint: /api/v3/klines
   timeout: 10
   interval_map:
