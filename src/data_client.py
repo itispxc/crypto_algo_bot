@@ -16,7 +16,7 @@ sys.path.insert(0, parent_dir)
 from src.data_classes import Candle, MarketSnapshot, PortfolioState, Position
 from roostoo_client import RoostooClient
 from config import Config
-from horus_client import create_horus_client
+from binance_client import create_binance_client
 
 logger = logging.getLogger(__name__)
 
@@ -38,11 +38,12 @@ class DataClient:
             api_secret=self.roostoo_config.ROOSTOO_API_SECRET,
             base_url=self.roostoo_config.ROOSTOO_BASE_URL
         )
-        horus_cfg = config.get("horus", {})
-        self.horus_client = create_horus_client(horus_cfg)
-        self.horus_symbol_map = horus_cfg.get("symbol_map", {}) if horus_cfg else {}
-        if self.horus_client:
-            logger.info("Horus data source enabled.")
+        binance_cfg = config.get("binance", {})
+        self.binance_client = create_binance_client(binance_cfg)
+        self.binance_symbol_map = binance_cfg.get("symbol_map", {}) if binance_cfg else {}
+        self.binance_interval_map = binance_cfg.get("interval_map", {}) if binance_cfg else {}
+        if self.binance_client:
+            logger.info("Binance data source enabled.")
         self.exchange_info = None
         self._load_exchange_info()
     
@@ -67,7 +68,7 @@ class DataClient:
             List of Candle objects
         """
         try:
-            candles = self._get_horus_candles(pair, interval, limit)
+            candles = self._get_binance_candles(pair, interval, limit)
             if candles:
                 return candles
 
@@ -134,32 +135,34 @@ class DataClient:
                 pass
             return []
 
-    def _map_horus_symbol(self, pair: str) -> Optional[str]:
+    def _map_binance_symbol(self, pair: str) -> Optional[str]:
         """
-        Map a Roostoo pair into the Horus symbol space.
+        Map a Roostoo pair into the Binance symbol space.
         """
-        if pair in self.horus_symbol_map:
-            return self.horus_symbol_map[pair]
-        # Simple default: remove the slash
+        if pair in self.binance_symbol_map:
+            return self.binance_symbol_map[pair]
         return pair.replace("/", "") if pair else None
 
-    def _get_horus_candles(self, pair: str, interval: str, limit: int) -> List[Candle]:
+    def _get_binance_candles(self, pair: str, interval: str, limit: int) -> List[Candle]:
         """
-        Try to fetch candles from the Horus API if configured.
+        Try to fetch candles from Binance if configured.
         """
-        if not self.horus_client:
+        if not self.binance_client:
             return []
 
-        symbol = self._map_horus_symbol(pair)
+        symbol = self._map_binance_symbol(pair)
         if not symbol:
             return []
 
-        raw_candles = self.horus_client.get_candles(symbol, interval=interval, limit=limit)
+        raw_candles = self.binance_client.get_candles(symbol, interval=interval, limit=limit)
         candles: List[Candle] = []
         for item in raw_candles:
             try:
+                ts = int(item["timestamp"])
+                if ts < 1e12:
+                    ts *= 1000
                 candles.append(Candle(
-                    ts=int(item["timestamp"]),
+                    ts=ts,
                     open=float(item["open"]),
                     high=float(item["high"]),
                     low=float(item["low"]),
@@ -167,7 +170,7 @@ class DataClient:
                     volume=float(item.get("volume", 0.0))
                 ))
             except Exception as exc:
-                logger.debug(f"Skipping malformed Horus candle for {pair}: {exc}")
+                logger.debug(f"Skipping malformed Binance candle for {pair}: {exc}")
                 continue
         return candles
     

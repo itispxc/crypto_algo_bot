@@ -3,41 +3,40 @@ exchange:
   min_order_usd: 100
   rate_limit_ms: 800
 
-horus:
+binance:
   enabled: true
-  base_url: https://api-horus.com
-  candles_endpoint: /market/candles
+  base_url: https://api.binance.com
+  candles_endpoint: /api/v3/klines
   timeout: 10
-  api_key:
-  api_key_env: HORUS_API_KEY
+  interval_map:
+    5m: 5m
+    30m: 30m
   symbol_map:
-    BTC/USD: BTCUSD
-    ETH/USD: ETHUSD
-    SOL/USD: SOLUSD
-    BNB/USD: BNBUSD
-    XRP/USD: XRPUSD
-    DOGE/USD: DOGEUSD
-    AVAX/USD: AVAXUSD
-    LINK/USD: LINKUSD
-    TON/USD: TONUSD
-    ADA/USD: ADAUSD
-    NEAR/USD: NEARUSD
-    TRX/USD: TRXUSD
-    ICP/USD: ICPUSD
-    SUI/USD: SUIUSD
-    DOT/USD: DOTUSD
-    FIL/USD: FILUSD
-    UNI/USD: UNIUSD
-    APT/USD: APTUSD
-    PENDLE/USD: PENDLEUSD
-    WLD/USD: WLDUSD
-    SEI/USD: SEIUSD
-    BONK/USD: BONKUSD
-    PEPE/USD: PEPEUSD
-    FLOKI/USD: FLOKIUSD
-    WIF/USD: WIFUSD
-    PUMP/USD: PUMPUSD
-    1000CHEEMS/USD: 1000CHEEMSUSD
+    BTC/USD: BTCUSDT
+    ETH/USD: ETHUSDT
+    SOL/USD: SOLUSDT
+    BNB/USD: BNBUSDT
+    XRP/USD: XRPUSDT
+    DOGE/USD: DOGEUSDT
+    AVAX/USD: AVAXUSDT
+    LINK/USD: LINKUSDT
+    TON/USD: TONUSDT
+    ADA/USD: ADAUSDT
+    NEAR/USD: NEARUSDT
+    TRX/USD: TRXUSDT
+    ICP/USD: ICPUSDT
+    SUI/USD: SUIUSDT
+    DOT/USD: DOTUSDT
+    FIL/USD: FILUSDT
+    UNI/USD: UNIUSDT
+    APT/USD: APTUSDT
+    PENDLE/USD: PENDLEUSDT
+    WLD/USD: WLDUSDT
+    SEI/USD: SEIUSDT
+    BONK/USD: BONKUSDT
+    PEPE/USD: PEPEUSDT
+    FLOKI/USD: FLOKIUSDT
+    WIF/USD: WIFUSDT
 
 universe:
   tier1:
@@ -85,8 +84,8 @@ scheduling:
   intraday_check_minutes: 15
 
 signals:
-  score_threshold: 0.02
-  hysteresis_weight_change: 0.02
+  score_threshold: 0.03
+  hysteresis_weight_change: 0.05
   top_k_normal: 8
   top_k_chop: 6
   top_k_down: 4
