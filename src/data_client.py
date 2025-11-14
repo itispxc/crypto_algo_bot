@@ -67,7 +67,7 @@ class DataClient:
             return filters
 
         candidates = []
-        possible_keys = ["Pairs", "pairs", "Data", "data", "Symbols", "symbols", "Result", "result"]
+        possible_keys = ["Pairs", "pairs", "Data", "data", "Symbols", "symbols", "Result", "result", "TradePairs", "tradePairs"]
         for key in possible_keys:
             if key in info:
                 raw = info[key]
@@ -84,6 +84,10 @@ class DataClient:
             for entry in info.get("TradingPairs", []):
                 if isinstance(entry, dict):
                     pair = entry.get("Pair") or entry.get("symbol")
+                    candidates.append((pair, entry))
+        if not candidates and isinstance(info.get("TradePairs"), dict):
+            for pair, entry in info.get("TradePairs").items():
+                if isinstance(entry, dict):
                     candidates.append((pair, entry))
 
         for pair, data in candidates:
@@ -102,9 +106,9 @@ class DataClient:
             price_step = _get_float(["PriceStep", "priceStep", "TickSize", "tickSize", "price_step", "priceIncrement"])
             qty_step = _get_float(["QuantityStep", "quantityStep", "QtyStep", "stepSize", "qty_step", "lotSize"])
             min_qty = _get_float(["MinQuantity", "minQuantity", "MinQty", "minQty"])
-            min_notional = _get_float(["MinNotional", "minNotional", "MinAmount", "minAmount"])
+            min_notional = _get_float(["MinNotional", "minNotional", "MinAmount", "minAmount", "MiniOrder"])
             precision_price = _get_float(["PrecisionPrice", "pricePrecision"])
-            precision_qty = _get_float(["PrecisionQty", "quantityPrecision"])
+            precision_qty = _get_float(["PrecisionQty", "quantityPrecision", "AmountPrecision"])
 
             if not price_step and precision_price is not None:
                 price_step = 10 ** (-int(precision_price))
