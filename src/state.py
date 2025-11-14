@@ -6,7 +6,7 @@ import os
 import logging
 from typing import Optional
 
-from .data_classes import PortfolioState
+from .data_classes import PortfolioState, Position
 
 logger = logging.getLogger(__name__)
 
@@ -36,7 +36,6 @@ def load_state() -> PortfolioState:
         # Reconstruct positions
         positions = {}
         for pair, pos_data in data.get("positions", {}).items():
-            from data_classes import Position
             positions[pair] = Position(**pos_data)
         
         return PortfolioState(
@@ -44,7 +43,11 @@ def load_state() -> PortfolioState:
             positions=positions,
             equity=data.get("equity", 0.0),
             peak_equity=data.get("peak_equity", 0.0),
-            last_rebalance_ts=data.get("last_rebalance_ts", 0)
+            last_rebalance_ts=data.get("last_rebalance_ts", 0),
+            fast_start_active=data.get("fast_start_active", False),
+            fast_start_completed=data.get("fast_start_completed", False),
+            fast_start_entry_price=data.get("fast_start_entry_price"),
+            fast_start_target_price=data.get("fast_start_target_price")
         )
     except Exception as e:
         logger.error(f"Failed to load state: {e}")
@@ -82,7 +85,11 @@ def save_state(state: PortfolioState):
             "positions": positions_dict,
             "equity": state.equity,
             "peak_equity": state.peak_equity,
-            "last_rebalance_ts": state.last_rebalance_ts
+            "last_rebalance_ts": state.last_rebalance_ts,
+            "fast_start_active": state.fast_start_active,
+            "fast_start_completed": state.fast_start_completed,
+            "fast_start_entry_price": state.fast_start_entry_price,
+            "fast_start_target_price": state.fast_start_target_price
         }
         
         with open(STATE_FILE, 'w') as f:

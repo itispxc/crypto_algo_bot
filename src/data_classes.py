@@ -45,6 +45,10 @@ class PortfolioState:
     equity: float
     peak_equity: float
     last_rebalance_ts: int
+    fast_start_active: bool = False
+    fast_start_completed: bool = False
+    fast_start_entry_price: Optional[float] = None
+    fast_start_target_price: Optional[float] = None
 
 
 @dataclass

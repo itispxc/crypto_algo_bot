@@ -3,6 +3,13 @@ exchange:
   min_order_usd: 100
   rate_limit_ms: 800
 
+tournament_fast_start:
+  enabled: true
+  pair: BTC/USD
+  take_profit_pct: 0.05
+  limit_slippage_pct: 0.002
+  min_cash_reserve: 50
+
 binance:
   enabled: true
   base_url: https://data-api.binance.vision

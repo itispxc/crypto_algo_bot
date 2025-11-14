@@ -281,7 +281,11 @@ class DataClient:
                 positions=positions,
                 equity=equity,
                 peak_equity=equity,
-                last_rebalance_ts=int(time.time() * 1000)
+            last_rebalance_ts=int(time.time() * 1000),
+            fast_start_active=False,
+            fast_start_completed=False,
+            fast_start_entry_price=None,
+            fast_start_target_price=None
             )
             
         except Exception as e:
@@ -295,7 +299,11 @@ class DataClient:
             positions={},
             equity=0.0,
             peak_equity=0.0,
-            last_rebalance_ts=int(time.time() * 1000)
+            last_rebalance_ts=int(time.time() * 1000),
+            fast_start_active=False,
+            fast_start_completed=False,
+            fast_start_entry_price=None,
+            fast_start_target_price=None
         )
     
     def place_order(self, pair: str, side: str, qty: float, 

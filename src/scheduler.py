@@ -24,6 +24,116 @@ from src.risk import check_drawdown_and_scale, update_stops
 logger = logging.getLogger(__name__)
 
 
+def maybe_run_fast_start(state, data_client, config):
+    """
+    Execute the tournament fast-start routine:
+    - Buy BTC with available cash
+    - Wait for a 5% (configurable) gain, then exit and resume normal trading
+    """
+    fast_cfg = config.get("tournament_fast_start", {})
+    if not fast_cfg.get("enabled", False):
+        return state, False
+
+    if state.fast_start_completed:
+        return state, False
+
+    pair = fast_cfg.get("pair", "BTC/USD")
+    take_profit_pct = fast_cfg.get("take_profit_pct", 0.05)
+    slippage_pct = fast_cfg.get("limit_slippage_pct", 0.002)
+    min_cash_reserve = fast_cfg.get("min_cash_reserve", 0.0)
+    fee_rate = config["exchange"].get("fee_bps", 0) / 10_000.0
+    min_order_usd = config["exchange"].get("min_order_usd", 0.0)
+
+    snapshot = data_client.get_snapshot(pair)
+    if not snapshot:
+        logger.warning("Fast start: unable to get snapshot for %s", pair)
+        return state, True
+
+    current_price = snapshot.price or snapshot.ask or snapshot.bid
+    if not current_price or current_price <= 0:
+        logger.warning("Fast start: invalid price for %s", pair)
+        return state, True
+
+    if not state.fast_start_active:
+        usable_cash = max(0.0, state.cash_usd - min_cash_reserve)
+        if usable_cash < min_order_usd:
+            logger.warning("Fast start: not enough cash (%.2f) to bootstrap trade", usable_cash)
+            state.fast_start_completed = True
+            save_state(state)
+            return state, False
+
+        limit_price = current_price * (1 + slippage_pct)
+        qty = (usable_cash * (1 - fee_rate)) / limit_price
+        if qty <= 0:
+            logger.warning("Fast start: computed qty <= 0")
+            state.fast_start_completed = True
+            save_state(state)
+            return state, False
+
+        logger.info("Fast start: buying %.6f %s @ %.2f (target +%.1f%%)", qty, pair, limit_price, take_profit_pct * 100)
+        order_id = data_client.place_order(pair=pair, side="buy", qty=qty, price=limit_price)
+        if order_id:
+            refreshed_state = data_client.get_positions()
+            refreshed_state.fast_start_active = True
+            refreshed_state.fast_start_completed = False
+            refreshed_state.fast_start_entry_price = limit_price
+            target_price = limit_price * (1 + take_profit_pct + 2 * fee_rate)
+            refreshed_state.fast_start_target_price = target_price
+            save_state(refreshed_state)
+            return refreshed_state, True
+
+        logger.error("Fast start: buy order failed, will retry")
+        return state, True
+
+    # Already long BTC, wait for target
+    target_price = state.fast_start_target_price
+    if not target_price and state.fast_start_entry_price:
+        target_price = state.fast_start_entry_price * (1 + take_profit_pct + 2 * fee_rate)
+        state.fast_start_target_price = target_price
+        save_state(state)
+
+    if not target_price:
+        logger.warning("Fast start: missing target price, resetting state")
+        state.fast_start_active = False
+        save_state(state)
+        return state, False
+
+    logger.info(
+        "Fast start: monitoring %s price %.2f vs target %.2f",
+        pair,
+        current_price,
+        target_price,
+    )
+
+    if current_price >= target_price:
+        position = state.positions.get(pair)
+        if not position or position.quantity <= 0:
+            logger.warning("Fast start: no position found to exit, marking complete")
+            state.fast_start_active = False
+            state.fast_start_completed = True
+            save_state(state)
+            return state, False
+
+        exit_price = current_price * (1 - slippage_pct)
+        logger.info("Fast start: target hit, selling %.6f %s @ %.2f", position.quantity, pair, exit_price)
+        order_id = data_client.place_order(pair=pair, side="sell", qty=position.quantity, price=exit_price)
+        if order_id:
+            refreshed_state = data_client.get_positions()
+            refreshed_state.fast_start_active = False
+            refreshed_state.fast_start_completed = True
+            refreshed_state.fast_start_entry_price = None
+            refreshed_state.fast_start_target_price = None
+            save_state(refreshed_state)
+            logger.info("Fast start complete: resuming normal strategy")
+            return refreshed_state, True
+
+        logger.error("Fast start: sell order failed, will retry")
+        return state, True
+
+    # Still waiting for target; pause the main strategy
+    return state, True
+
+
 def run_bot(config: dict):
     """
     Main bot loop.
@@ -73,6 +183,11 @@ def run_bot(config: dict):
             now = datetime.now(timezone.utc)
             current_minute = now.minute
             current_time_str = now.strftime("%H:%M")
+
+            state, fast_start_block = maybe_run_fast_start(state, data_client, config)
+            if fast_start_block:
+                time.sleep(config["exchange"]["rate_limit_ms"] / 1000.0)
+                continue
             
             # Intraday checks (every 15 minutes)
             if current_minute % config["scheduling"]["intraday_check_minutes"] == 0 and current_minute != last_minute:
