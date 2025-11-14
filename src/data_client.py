@@ -45,15 +45,86 @@ class DataClient:
         if self.binance_client:
             logger.info("Binance data source enabled.")
         self.exchange_info = None
+        self.pair_filters: Dict[str, Dict[str, float]] = {}
         self._load_exchange_info()
     
     def _load_exchange_info(self):
         """Load exchange information once."""
         try:
             self.exchange_info = self.client.get_exchange_info()
+            self.pair_filters = self._extract_pair_filters(self.exchange_info)
         except Exception as e:
             logger.warning(f"Failed to load exchange info: {e}")
             self.exchange_info = {}
+            self.pair_filters = {}
+
+    def _extract_pair_filters(self, info: Optional[Dict]) -> Dict[str, Dict[str, float]]:
+        """
+        Parse exchange info to determine per-pair precision/step sizes.
+        """
+        filters: Dict[str, Dict[str, float]] = {}
+        if not info or not isinstance(info, dict):
+            return filters
+
+        candidates = []
+        possible_keys = ["Pairs", "pairs", "Data", "data", "Symbols", "symbols", "Result", "result"]
+        for key in possible_keys:
+            if key in info:
+                raw = info[key]
+                if isinstance(raw, dict):
+                    candidates.extend([(k, v) for k, v in raw.items()])
+                elif isinstance(raw, list):
+                    for entry in raw:
+                        if isinstance(entry, dict):
+                            pair = entry.get("Pair") or entry.get("symbol") or entry.get("Symbol")
+                            candidates.append((pair, entry))
+                break
+
+        if not candidates and info.get("Success") and isinstance(info.get("TradingPairs"), list):
+            for entry in info.get("TradingPairs", []):
+                if isinstance(entry, dict):
+                    pair = entry.get("Pair") or entry.get("symbol")
+                    candidates.append((pair, entry))
+
+        for pair, data in candidates:
+            if not pair or not isinstance(data, dict):
+                continue
+
+            def _get_float(keys):
+                for key in keys:
+                    if key in data and data[key] not in (None, ""):
+                        try:
+                            return float(data[key])
+                        except (TypeError, ValueError):
+                            continue
+                return None
+
+            price_step = _get_float(["PriceStep", "priceStep", "TickSize", "tickSize", "price_step", "priceIncrement"])
+            qty_step = _get_float(["QuantityStep", "quantityStep", "QtyStep", "stepSize", "qty_step", "lotSize"])
+            min_qty = _get_float(["MinQuantity", "minQuantity", "MinQty", "minQty"])
+            min_notional = _get_float(["MinNotional", "minNotional", "MinAmount", "minAmount"])
+            precision_price = _get_float(["PrecisionPrice", "pricePrecision"])
+            precision_qty = _get_float(["PrecisionQty", "quantityPrecision"])
+
+            if not price_step and precision_price is not None:
+                price_step = 10 ** (-int(precision_price))
+            if not qty_step and precision_qty is not None:
+                qty_step = 10 ** (-int(precision_qty))
+
+            filters[pair] = {
+                "price_step": price_step or 0.01,
+                "qty_step": qty_step or 0.0001,
+                "min_qty": min_qty or 0.0,
+                "min_notional": min_notional or 0.0,
+            }
+
+        return filters if filters else {}
+
+    def get_pair_filters(self, pair: str) -> Dict[str, float]:
+        """
+        Return precision filters for a pair if available.
+        """
+        return self.pair_filters.get(pair, {})
     
     def get_candles(self, pair: str, interval: str, limit: int) -> List[Candle]:
         """

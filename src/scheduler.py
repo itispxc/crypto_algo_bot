@@ -2,6 +2,7 @@
 Main scheduler loop for the trading bot.
 """
 import time
+import math
 import logging
 from datetime import datetime, timezone
 from typing import Dict
@@ -24,6 +25,23 @@ from src.risk import check_drawdown_and_scale, update_stops
 logger = logging.getLogger(__name__)
 
 
+def _round_to_step(value: float, step: float, direction: str = "nearest") -> float:
+    """
+    Align a value to the exchange-defined step size.
+    direction: 'ceil', 'floor', or 'nearest'
+    """
+    if not step or step <= 0:
+        return value
+    ratio = value / step
+    if direction == "ceil":
+        ratio = math.ceil(ratio - 1e-12)
+    elif direction == "floor":
+        ratio = math.floor(ratio + 1e-12)
+    else:
+        ratio = round(ratio)
+    return ratio * step
+
+
 def maybe_run_fast_start(state, data_client, config):
     """
     Execute the tournament fast-start routine:
@@ -43,6 +61,11 @@ def maybe_run_fast_start(state, data_client, config):
     min_cash_reserve = fast_cfg.get("min_cash_reserve", 0.0)
     fee_rate = config["exchange"].get("fee_bps", 0) / 10_000.0
     min_order_usd = config["exchange"].get("min_order_usd", 0.0)
+    pair_filters = data_client.get_pair_filters(pair)
+    price_step = pair_filters.get("price_step")
+    qty_step = pair_filters.get("qty_step")
+    min_qty = pair_filters.get("min_qty", 0.0)
+    min_notional = pair_filters.get("min_notional", 0.0)
 
     snapshot = data_client.get_snapshot(pair)
     if not snapshot:
@@ -63,9 +86,23 @@ def maybe_run_fast_start(state, data_client, config):
             return state, False
 
         limit_price = current_price * (1 + slippage_pct)
+        limit_price = _round_to_step(limit_price, price_step, "ceil")
         qty = (usable_cash * (1 - fee_rate)) / limit_price
+        qty = _round_to_step(qty, qty_step, "floor")
         if qty <= 0:
             logger.warning("Fast start: computed qty <= 0")
+            state.fast_start_completed = True
+            save_state(state)
+            return state, False
+
+        if min_qty and qty < min_qty:
+            logger.warning("Fast start: qty %.8f below min qty %.8f", qty, min_qty)
+            state.fast_start_completed = True
+            save_state(state)
+            return state, False
+
+        if min_notional and (qty * limit_price) < min_notional:
+            logger.warning("Fast start: notional %.2f below min %.2f", qty * limit_price, min_notional)
             state.fast_start_completed = True
             save_state(state)
             return state, False
@@ -115,8 +152,17 @@ def maybe_run_fast_start(state, data_client, config):
             return state, False
 
         exit_price = current_price * (1 - slippage_pct)
-        logger.info("Fast start: target hit, selling %.6f %s @ %.2f", position.quantity, pair, exit_price)
-        order_id = data_client.place_order(pair=pair, side="sell", qty=position.quantity, price=exit_price)
+        exit_price = _round_to_step(exit_price, price_step, "floor")
+        sell_qty = _round_to_step(position.quantity, qty_step, "floor") if position else 0.0
+        if sell_qty <= 0:
+            logger.warning("Fast start: rounded sell quantity <= 0")
+            state.fast_start_active = False
+            state.fast_start_completed = True
+            save_state(state)
+            return state, False
+
+        logger.info("Fast start: target hit, selling %.6f %s @ %.2f", sell_qty, pair, exit_price)
+        order_id = data_client.place_order(pair=pair, side="sell", qty=sell_qty, price=exit_price)
         if order_id:
             refreshed_state = data_client.get_positions()
             refreshed_state.fast_start_active = False
