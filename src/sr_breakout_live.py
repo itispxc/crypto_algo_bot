@@ -68,13 +68,13 @@ def run_sr_breakout_live(config: dict):
     fee_bps = config["exchange"]["fee_bps"]
     
     # Strategy parameters (from your Pine script)
+    # Note: EC2 version doesn't have hold_bars or min_profit_percent
+    # Profit target is set as PROFIT_TARGET_PCT constant above
     params = SRBreakoutParams(
         left_bars=6,
         right_bars=9,
         volume_threshold=31.0,
-        cooldown_bars=21,
-        hold_bars=29,
-        min_profit_percent=4.6
+        cooldown_bars=21
     )
     
     data_client = DataClient(config)
@@ -200,7 +200,7 @@ def run_sr_breakout_live(config: dict):
                           f"Current: ${current_price:.2f} | Profit: {profit_pct:.2f}%")
                 
                 # Check exit condition
-                if profit_pct >= params.min_profit_percent:
+                if profit_pct >= PROFIT_TARGET_PCT:
                     # Exit at current price
                     exit_qty = open_position.quantity
                     exit_qty = _round_to_step(exit_qty, qty_step, "floor")
