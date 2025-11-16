@@ -10,6 +10,33 @@ tournament_fast_start:
   limit_slippage_pct: 0.002
   min_cash_reserve: 50
 
+modes:
+  default: normal
+  profiles:
+    bull:
+      triggers:
+        regime: trend
+        min_r6h: 0.003
+        min_r1h: 0.001
+        min_rsi: 55
+        min_bb_pos: 0.55
+        max_dd_from_peak: -0.08
+      overrides:
+        signals:
+          score_threshold: 0.015
+          hysteresis_weight_change: 0.02
+          top_k_normal: 12
+        sizing:
+          cash_buffer_normal: 0.02
+          cap_t1: 0.25
+          cap_t2: 0.15
+          cap_t3: 0.08
+          sleeve_t3_max: 0.15
+        risk:
+          reduce_after_soft: 0.75
+        stops:
+          atr_trail: 1.5
+
 binance:
   enabled: true
   base_url: https://data-api.binance.vision
@@ -18,6 +45,7 @@ binance:
   interval_map:
     5m: 5m
     30m: 30m
+    1h: 1h
   symbol_map:
     BTC/USD: BTCUSDT
     ETH/USD: ETHUSDT
