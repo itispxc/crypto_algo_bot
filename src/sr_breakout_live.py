@@ -20,6 +20,9 @@ from src.strategies.sr_breakout import SRBreakoutBacktester, SRBreakoutParams
 
 logger = logging.getLogger(__name__)
 
+# Profit target for ZEC/USD trades (4.2%)
+PROFIT_TARGET_PCT = 4.2
+
 
 def _round_to_step(value: float, step: float, direction: str = "nearest") -> float:
     """Align value to exchange step size."""
