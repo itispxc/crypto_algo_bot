@@ -132,58 +132,64 @@ def run_sr_breakout_live(config: dict):
     state = data_client.get_positions()
     logger.info(f"Cash after cleanup: ${state.cash_usd:,.2f}")
     
-    # WAIT FOR BTC TO BE PROFITABLE: If all cash is locked in BTC, wait for it to hit 0.5% profit
-    min_cash_needed = config["exchange"]["min_order_usd"]
-    if state.cash_usd < min_cash_needed:
-        # Check if we have BTC or other positions
-        btc_position = None
-        for pos_pair, position in state.positions.items():
-            if position.quantity > 0 and pos_pair != pair:
-                btc_position = (pos_pair, position)
-                break
+    # WAIT FOR BTC TO BE PROFITABLE: If BTC exists, wait for it to hit 0.5% profit BEFORE trading ZEC/USD
+    min_profit_to_sell = 0.5  # Only sell if up 0.5% or more
+    btc_position = None
+    for pos_pair, position in state.positions.items():
+        if position.quantity > 0 and pos_pair != pair:
+            btc_position = (pos_pair, position)
+            break
+    
+    if btc_position:
+        pos_pair, position = btc_position
+        logger.info(f"Found {pos_pair} position. Waiting for it to reach 0.5% profit before trading ZEC/USD...")
         
-        if btc_position:
-            pos_pair, position = btc_position
-            logger.info(f"All cash is locked in {pos_pair}. Waiting for it to reach 0.5% profit...")
-            
-            while state.cash_usd < min_cash_needed:
-                snapshot = data_client.get_snapshot(pos_pair)
-                if snapshot:
-                    current_price = snapshot.price
-                    entry_price = position.avg_price
-                    profit_pct = ((current_price - entry_price) / entry_price) * 100
-                    
-                    logger.info(f"Monitoring {pos_pair}: Entry=${entry_price:.2f} | Current=${current_price:.2f} | Profit={profit_pct:.2f}%")
-                    
-                    if profit_pct >= min_profit_to_sell:
-                        logger.info(f"{pos_pair} hit {profit_pct:.2f}% profit! Selling to free cash...")
-                        filters = data_client.get_pair_filters(pos_pair)
-                        exit_price = _round_to_step(current_price, filters.get("price_step", 0.01), "floor")
-                        exit_qty = _round_to_step(position.quantity, filters.get("qty_step", 0.0001), "floor")
-                        
-                        if exit_qty > 0:
-                            order_id = data_client.place_order(
-                                pair=pos_pair,
-                                side="sell",
-                                qty=exit_qty,
-                                price=exit_price
-                            )
-                            if order_id:
-                                logger.info(f"Sold {pos_pair}: {exit_qty:.6f} @ ${exit_price:.2f} (order: {order_id})")
-                                time.sleep(5)  # Wait for order to fill
-                                state = data_client.get_positions()
-                                logger.info(f"Cash now available: ${state.cash_usd:,.2f}")
-                                break
-                            else:
-                                logger.warning(f"Failed to sell {pos_pair}, retrying...")
+        while True:
+            snapshot = data_client.get_snapshot(pos_pair)
+            if snapshot:
+                current_price = snapshot.price
+                entry_price = position.avg_price
+                profit_pct = ((current_price - entry_price) / entry_price) * 100
                 
-                time.sleep(60)  # Check every minute
-                state = data_client.get_positions()
-                # Update position in case it changed
-                for p_pair, p_pos in state.positions.items():
-                    if p_pos.quantity > 0 and p_pair != pair:
-                        position = p_pos
-                        break
+                logger.info(f"Monitoring {pos_pair}: Entry=${entry_price:.2f} | Current=${current_price:.2f} | Profit={profit_pct:.2f}%")
+                
+                if profit_pct >= min_profit_to_sell:
+                    logger.info(f"{pos_pair} hit {profit_pct:.2f}% profit! Selling to free cash...")
+                    filters = data_client.get_pair_filters(pos_pair)
+                    exit_price = _round_to_step(current_price, filters.get("price_step", 0.01), "floor")
+                    exit_qty = _round_to_step(position.quantity, filters.get("qty_step", 0.0001), "floor")
+                    
+                    if exit_qty > 0:
+                        order_id = data_client.place_order(
+                            pair=pos_pair,
+                            side="sell",
+                            qty=exit_qty,
+                            price=exit_price
+                        )
+                        if order_id:
+                            logger.info(f"Sold {pos_pair}: {exit_qty:.6f} @ ${exit_price:.2f} (order: {order_id})")
+                            time.sleep(5)  # Wait for order to fill
+                            state = data_client.get_positions()
+                            logger.info(f"Cash now available: ${state.cash_usd:,.2f}")
+                            logger.info("BTC sold! Now starting ZEC/USD trading...")
+                            break
+                        else:
+                            logger.warning(f"Failed to sell {pos_pair}, retrying...")
+            
+            time.sleep(60)  # Check every minute
+            state = data_client.get_positions()
+            # Update position in case it changed, or check if it was sold
+            btc_still_exists = False
+            for p_pair, p_pos in state.positions.items():
+                if p_pos.quantity > 0 and p_pair != pair:
+                    position = p_pos
+                    pos_pair = p_pair
+                    btc_still_exists = True
+                    break
+            
+            if not btc_still_exists:
+                logger.info(f"{pos_pair} position no longer exists. Starting ZEC/USD trading...")
+                break
     
     # Track position
     position_entry_price: Optional[float] = None
