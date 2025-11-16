@@ -21,6 +21,20 @@ from src.strategies.sr_breakout import SRBreakoutBacktester, SRBreakoutParams
 logger = logging.getLogger(__name__)
 
 
+def _round_to_step(value: float, step: float, direction: str = "nearest") -> float:
+    """Align value to exchange step size."""
+    if not step or step <= 0:
+        return value
+    ratio = value / step
+    if direction == "ceil":
+        ratio = math.ceil(ratio - 1e-12)
+    elif direction == "floor":
+        ratio = math.floor(ratio + 1e-12)
+    else:
+        ratio = round(ratio)
+    return ratio * step
+
+
 def candles_to_df(candles):
     return pd.DataFrame([
         {
@@ -73,6 +87,38 @@ def run_sr_breakout_live(config: dict):
     
     logger.info(f"Initial equity: ${state.equity:,.2f}")
     logger.info(f"Dry run: {config['ops']['dry_run']}")
+    
+    # CLEANUP: Sell any existing positions (especially BTC from old strategy)
+    logger.info("Checking for existing positions to close...")
+    state = data_client.get_positions()
+    for pos_pair, position in state.positions.items():
+        if position.quantity > 0 and pos_pair != pair:
+            logger.info(f"Closing existing position: {pos_pair} - {position.quantity:.6f} @ ${position.avg_price:.2f}")
+            # Get current price
+            snapshot = data_client.get_snapshot(pos_pair)
+            if snapshot:
+                exit_price = snapshot.price
+                # Get pair filters
+                filters = data_client.get_pair_filters(pos_pair)
+                exit_price = _round_to_step(exit_price, filters.get("price_step", 0.01), "floor")
+                exit_qty = _round_to_step(position.quantity, filters.get("qty_step", 0.0001), "floor")
+                
+                if exit_qty > 0:
+                    order_id = data_client.place_order(
+                        pair=pos_pair,
+                        side="sell",
+                        qty=exit_qty,
+                        price=exit_price
+                    )
+                    if order_id:
+                        logger.info(f"Sold {pos_pair}: {exit_qty:.6f} @ ${exit_price:.2f} (order: {order_id})")
+                        time.sleep(3)  # Wait for order to process
+                    else:
+                        logger.warning(f"Failed to sell {pos_pair}")
+    
+    # Refresh state after cleanup
+    state = data_client.get_positions()
+    logger.info(f"Cash after cleanup: ${state.cash_usd:,.2f}")
     
     # Track position
     position_entry_price: Optional[float] = None
@@ -257,18 +303,4 @@ def run_sr_breakout_live(config: dict):
         except Exception as e:
             logger.exception(f"Error in main loop: {e}")
             time.sleep(60)
-
-
-def _round_to_step(value: float, step: float, direction: str = "nearest") -> float:
-    """Align value to exchange step size."""
-    if not step or step <= 0:
-        return value
-    ratio = value / step
-    if direction == "ceil":
-        ratio = math.ceil(ratio - 1e-12)
-    elif direction == "floor":
-        ratio = math.floor(ratio + 1e-12)
-    else:
-        ratio = round(ratio)
-    return ratio * step
 
