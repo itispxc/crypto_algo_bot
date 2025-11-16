@@ -88,33 +88,45 @@ def run_sr_breakout_live(config: dict):
     logger.info(f"Initial equity: ${state.equity:,.2f}")
     logger.info(f"Dry run: {config['ops']['dry_run']}")
     
-    # CLEANUP: Sell any existing positions (especially BTC from old strategy)
+    # CLEANUP: Sell any existing positions only if they're up 0.5% or more
     logger.info("Checking for existing positions to close...")
     state = data_client.get_positions()
+    min_profit_to_sell = 0.5  # Only sell if up 0.5% or more
+    
     for pos_pair, position in state.positions.items():
         if position.quantity > 0 and pos_pair != pair:
-            logger.info(f"Closing existing position: {pos_pair} - {position.quantity:.6f} @ ${position.avg_price:.2f}")
             # Get current price
             snapshot = data_client.get_snapshot(pos_pair)
             if snapshot:
-                exit_price = snapshot.price
-                # Get pair filters
-                filters = data_client.get_pair_filters(pos_pair)
-                exit_price = _round_to_step(exit_price, filters.get("price_step", 0.01), "floor")
-                exit_qty = _round_to_step(position.quantity, filters.get("qty_step", 0.0001), "floor")
+                current_price = snapshot.price
+                entry_price = position.avg_price
+                profit_pct = ((current_price - entry_price) / entry_price) * 100
                 
-                if exit_qty > 0:
-                    order_id = data_client.place_order(
-                        pair=pos_pair,
-                        side="sell",
-                        qty=exit_qty,
-                        price=exit_price
-                    )
-                    if order_id:
-                        logger.info(f"Sold {pos_pair}: {exit_qty:.6f} @ ${exit_price:.2f} (order: {order_id})")
-                        time.sleep(3)  # Wait for order to process
-                    else:
-                        logger.warning(f"Failed to sell {pos_pair}")
+                logger.info(f"Existing position: {pos_pair} - {position.quantity:.6f} @ ${entry_price:.2f} | "
+                          f"Current: ${current_price:.2f} | Profit: {profit_pct:.2f}%")
+                
+                # Only sell if profit >= 0.5%
+                if profit_pct >= min_profit_to_sell:
+                    logger.info(f"Position is up {profit_pct:.2f}%, selling to free cash...")
+                    # Get pair filters
+                    filters = data_client.get_pair_filters(pos_pair)
+                    exit_price = _round_to_step(current_price, filters.get("price_step", 0.01), "floor")
+                    exit_qty = _round_to_step(position.quantity, filters.get("qty_step", 0.0001), "floor")
+                    
+                    if exit_qty > 0:
+                        order_id = data_client.place_order(
+                            pair=pos_pair,
+                            side="sell",
+                            qty=exit_qty,
+                            price=exit_price
+                        )
+                        if order_id:
+                            logger.info(f"Sold {pos_pair}: {exit_qty:.6f} @ ${exit_price:.2f} (order: {order_id})")
+                            time.sleep(3)  # Wait for order to process
+                        else:
+                            logger.warning(f"Failed to sell {pos_pair}")
+                else:
+                    logger.info(f"Position is down {abs(profit_pct):.2f}% or up less than {min_profit_to_sell}%, keeping it")
     
     # Refresh state after cleanup
     state = data_client.get_positions()
