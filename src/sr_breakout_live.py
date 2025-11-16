@@ -17,6 +17,7 @@ sys.path.insert(0, parent_dir)
 from src.data_client import DataClient
 from src.state import load_state, save_state
 from src.strategies.sr_breakout import SRBreakoutBacktester, SRBreakoutParams
+from src.data_classes import Position
 
 logger = logging.getLogger(__name__)
 
@@ -94,6 +95,37 @@ def run_sr_breakout_live(config: dict):
     # CLEANUP: Sell ALL BTC immediately to free cash for ZEC/USD trading
     logger.info("Checking for existing positions to close...")
     state = data_client.get_positions()
+    
+    # Also check raw balance for BTC (in case it's not in positions from orders)
+    balance = data_client.client.get_balance()
+    if balance.get('Success'):
+        spot_wallet = balance.get('SpotWallet', {})
+        btc_balance = spot_wallet.get('BTC', {})
+        btc_qty = float(btc_balance.get('Free', 0))
+        
+        if btc_qty > 0 and 'BTC/USD' not in state.positions:
+            # Create a position from the raw balance
+            logger.info(f"Found BTC in balance: {btc_qty:.6f} (not in tracked positions)")
+            snapshot = data_client.get_snapshot('BTC/USD')
+            if snapshot:
+                # Try to get actual entry price from order history
+                entry_price = snapshot.price  # Default to current price
+                orders = data_client.client.query_order(pair='BTC/USD', limit=100)
+                if orders.get('Success'):
+                    order_list = orders.get('OrderMatched', [])
+                    # Find most recent BUY order
+                    for order in reversed(order_list):
+                        if order.get('Side') == 'BUY' and order.get('Status') == 'FILLED':
+                            entry_price = float(order.get('FilledAverPrice', entry_price))
+                            break
+                
+                state.positions['BTC/USD'] = Position(
+                    pair='BTC/USD',
+                    quantity=btc_qty,
+                    avg_price=entry_price,
+                    usd_value=btc_qty * snapshot.price
+                )
+                logger.info(f"Created BTC/USD position from balance: {btc_qty:.6f} @ ${entry_price:.2f}")
     
     for pos_pair, position in state.positions.items():
         if position.quantity > 0 and pos_pair != pair:
