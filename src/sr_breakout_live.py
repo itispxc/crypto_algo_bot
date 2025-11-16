@@ -143,9 +143,10 @@ def run_sr_breakout_live(config: dict):
                           f"Current: ${current_price:.2f} | Profit: {profit_pct:+.2f}% | Value: ${value:,.2f}")
     logger.info("=" * 80 + "\n")
     
-    # Keep BTC position (don't sell it) and start trading ZEC/USD immediately
-    logger.info("Starting ZEC/USD trading...")
-    logger.info("Note: BTC position will be kept (not sold)")
+    # Monitor BTC and sell when price reaches $95,950
+    BTC_SELL_PRICE = 95950.0
+    logger.info(f"Starting ZEC/USD trading...")
+    logger.info(f"BTC will be sold when price reaches ${BTC_SELL_PRICE:,.2f}")
     
     # Track position
     position_entry_price: Optional[float] = None
@@ -199,6 +200,30 @@ def run_sr_breakout_live(config: dict):
             
             # Update state
             state = data_client.get_positions()
+            
+            # Check BTC position and sell if price >= $95,950
+            btc_position = state.positions.get('BTC/USD')
+            if btc_position and btc_position.quantity > 0:
+                btc_snapshot = data_client.get_snapshot('BTC/USD')
+                if btc_snapshot and btc_snapshot.price >= BTC_SELL_PRICE:
+                    logger.info(f"BTC price ${btc_snapshot.price:.2f} >= ${BTC_SELL_PRICE:,.2f}! Selling BTC...")
+                    filters = data_client.get_pair_filters('BTC/USD')
+                    exit_price = _round_to_step(btc_snapshot.price, filters.get("price_step", 0.01), "floor")
+                    exit_qty = _round_to_step(btc_position.quantity, filters.get("qty_step", 0.0001), "floor")
+                    
+                    if exit_qty > 0:
+                        order_id = data_client.place_order(
+                            pair='BTC/USD',
+                            side="sell",
+                            qty=exit_qty,
+                            price=exit_price
+                        )
+                        if order_id:
+                            logger.info(f"Sold BTC: {exit_qty:.6f} @ ${exit_price:.2f} (order: {order_id})")
+                            time.sleep(5)  # Wait for order to fill
+                            state = data_client.get_positions()  # Refresh state
+                        else:
+                            logger.error("Failed to sell BTC")
             
             # Check if we have an open position
             open_position = state.positions.get(pair)
