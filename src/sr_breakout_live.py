@@ -143,80 +143,9 @@ def run_sr_breakout_live(config: dict):
                           f"Current: ${current_price:.2f} | Profit: {profit_pct:+.2f}% | Value: ${value:,.2f}")
     logger.info("=" * 80 + "\n")
     
-    # Wait for BTC to hit 0.2% profit before selling (if BTC exists)
-    min_profit_to_sell_btc = 0.2
-    btc_position = None
-    for pos_pair, position in state.positions.items():
-        if position.quantity > 0 and pos_pair != pair:
-            btc_position = (pos_pair, position)
-            break
-    
-    if btc_position:
-        btc_pair, btc_pos = btc_position
-        logger.info(f"Found {btc_pair} position. Waiting for it to reach {min_profit_to_sell_btc}% profit before selling...")
-        
-        while True:
-            # Refresh state to get latest positions
-            state = data_client.get_positions()
-            
-            # Show ALL positions (BTC and ZEC) every minute
-            logger.info("\n" + "-" * 80)
-            logger.info("POSITION STATUS:")
-            for pos_pair, position in state.positions.items():
-                if position.quantity > 0:
-                    snapshot = data_client.get_snapshot(pos_pair)
-                    if snapshot:
-                        current_price = snapshot.price
-                        entry_price = position.avg_price
-                        profit_pct = ((current_price - entry_price) / entry_price) * 100
-                        value = position.quantity * current_price
-                        logger.info(f"  {pos_pair}: {position.quantity:.6f} @ ${entry_price:.2f} | "
-                                  f"Current: ${current_price:.2f} | Profit: {profit_pct:+.2f}% | Value: ${value:,.2f}")
-            logger.info("-" * 80)
-            
-            # Check BTC position
-            btc_snapshot = data_client.get_snapshot(btc_pair)
-            if btc_snapshot:
-                # Update BTC position from state
-                btc_pos = state.positions.get(btc_pair)
-                if btc_pos and btc_pos.quantity > 0:
-                    current_price = btc_snapshot.price
-                    entry_price = btc_pos.avg_price
-                    profit_pct = ((current_price - entry_price) / entry_price) * 100
-                    
-                    if profit_pct >= min_profit_to_sell_btc:
-                        logger.info(f"\n{btc_pair} hit {profit_pct:.2f}% profit! Selling to free cash...")
-                        filters = data_client.get_pair_filters(btc_pair)
-                        exit_price = _round_to_step(current_price, filters.get("price_step", 0.01), "floor")
-                        exit_qty = _round_to_step(btc_pos.quantity, filters.get("qty_step", 0.0001), "floor")
-                        
-                        if exit_qty > 0:
-                            order_id = data_client.place_order(
-                                pair=btc_pair,
-                                side="sell",
-                                qty=exit_qty,
-                                price=exit_price
-                            )
-                            if order_id:
-                                logger.info(f"Sold {btc_pair}: {exit_qty:.6f} @ ${exit_price:.2f} (order: {order_id})")
-                                time.sleep(5)  # Wait for order to fill
-                                state = data_client.get_positions()
-                                logger.info(f"Cash now available: ${state.cash_usd:,.2f}")
-                                logger.info("BTC sold! Now starting ZEC/USD trading...")
-                                break
-                            else:
-                                logger.warning(f"Failed to sell {btc_pair}, retrying...")
-                else:
-                    # BTC was sold or doesn't exist anymore
-                    logger.info(f"{btc_pair} position no longer exists. Starting ZEC/USD trading...")
-                    break
-            
-            time.sleep(60)  # Check every minute
-    
-    # Refresh state after cleanup
-    state = data_client.get_positions()
-    logger.info(f"Cash available: ${state.cash_usd:,.2f}")
+    # Keep BTC position (don't sell it) and start trading ZEC/USD immediately
     logger.info("Starting ZEC/USD trading...")
+    logger.info("Note: BTC position will be kept (not sold)")
     
     # Track position
     position_entry_price: Optional[float] = None
@@ -386,10 +315,16 @@ def run_sr_breakout_live(config: dict):
                             else:
                                 logger.warning(f"Quantity too small: {qty:.6f} (min: {min_qty})")
             
-            # Log status every minute
-            logger.info(f"Status: Price=${current_price:.2f} | "
-                      f"Cash=${state.cash_usd:.2f} | "
-                      f"Equity=${state.equity:.2f}")
+            # Log status every minute (show all positions including BTC)
+            logger.info(f"Status: ZEC Price=${current_price:.2f} | Cash=${state.cash_usd:.2f} | Equity=${state.equity:.2f}")
+            # Show all positions
+            for pos_pair, position in state.positions.items():
+                if position.quantity > 0:
+                    pos_snapshot = data_client.get_snapshot(pos_pair)
+                    if pos_snapshot:
+                        pos_profit = ((pos_snapshot.price - position.avg_price) / position.avg_price) * 100
+                        logger.info(f"  {pos_pair}: {position.quantity:.6f} @ ${position.avg_price:.2f} | "
+                                  f"Current: ${pos_snapshot.price:.2f} | Profit: {pos_profit:+.2f}%")
             
             # Wait for next minute
             time.sleep(60)
