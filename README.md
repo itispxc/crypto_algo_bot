@@ -11,20 +11,46 @@ An autonomous trading bot for the Roostoo mock exchange that makes buy, hold, an
 - **Portfolio Management**: Monitors and manages portfolio positions
 - **Comprehensive Logging**: Detailed logs for monitoring and debugging
 
-## Strategy
+## Strategy Documentation
 
-The bot uses a **Simple Moving Average (SMA) Crossover Strategy**:
+### Core Strategy: Support/Resistance Breakout (S/R Breakout)
 
-- **Buy Signal**: Fast MA crosses above Slow MA (bullish crossover)
-- **Sell Signal**: Fast MA crosses below Slow MA (bearish crossover)
-- **Hold**: No crossover detected, maintain current position
+The bot implements a **Support/Resistance Breakout Strategy** for ZEC/USD trading on 1-minute timeframes. The core idea is to identify key price levels (support and resistance) and enter long positions when price breaks above resistance with volume confirmation.
 
-### Default Parameters
-- Fast MA Period: 10
-- Slow MA Period: 30
-- Trading Interval: 60 seconds
-- Max Position Size: 10% of portfolio
-- Minimum Order Size: 0.001
+#### Core Concept
+
+1. **Pivot Point Detection**: The strategy identifies pivot highs (resistance levels) by scanning price action over a rolling window. A pivot high is a local maximum where the high price is the highest within a defined left and right bar window.
+
+2. **Breakout Entry**: When price breaks above a detected resistance level with:
+   - **Trend confirmation**: Price must be above the 200-period EMA (uptrend filter)
+   - **Volume confirmation**: Volume oscillator exceeds threshold OR price is above 20-period EMA
+   - **Cooldown period**: Minimum time between trades to avoid overtrading
+
+3. **Profit Target Exit**: Positions are closed when profit reaches 4.2%, ensuring consistent profit-taking.
+
+#### Implementation Details
+
+- **Data Source**: Historical OHLCV data from Binance API (1-minute candles)
+- **Indicators**:
+  - 200-period EMA (trend filter)
+  - 20-period EMA (momentum confirmation)
+  - Volume Oscillator (5 EMA vs 10 EMA of volume)
+  - Pivot High/Low detection (6 bars left, 9 bars right)
+- **Entry Conditions**: Price breaks above pivot high resistance + trend + volume confirmation
+- **Exit Conditions**: Fixed profit target of 4.2%
+- **Risk Management**: 21-bar cooldown between trades, long-only (no short selling)
+
+#### Strategy Parameters
+
+- `left_bars`: 6 (pivot detection window - left side)
+- `right_bars`: 9 (pivot detection window - right side)
+- `volume_threshold`: 31.0 (minimum volume oscillator for entry)
+- `cooldown_bars`: 21 (minutes between trades)
+- `profit_target`: 4.2% (take profit level)
+
+#### Note on BTC Position
+
+The bot maintains a BTC/USD position that was added initially to establish a position on the leaderboard before switching to the S/R breakout strategy. BTC is automatically sold when its price reaches $95,950, after which the bot focuses exclusively on ZEC/USD trading.
 
 ## Installation
 
