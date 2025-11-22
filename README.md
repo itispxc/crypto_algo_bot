@@ -13,40 +13,99 @@ An autonomous trading bot for the Roostoo mock exchange that makes buy, hold, an
 
 ## Strategy Documentation
 
-### Core Strategy: Support/Resistance Breakout (S/R Breakout)
+### Core Strategy: Support/Resistance Breakout (S/R Breakout) for ZEC/USD
 
-The bot implements a **Support/Resistance Breakout Strategy** for ZEC/USD trading on 1-minute timeframes. The core idea is to identify key price levels (support and resistance) and enter long positions when price breaks above resistance with volume confirmation.
+The bot implements a **Support/Resistance Breakout Strategy** exclusively for ZEC/USD trading on 1-minute timeframes. The strategy identifies key price levels (support and resistance) and enters long positions when price breaks above resistance with volume confirmation.
 
 #### Core Concept
 
-1. **Pivot Point Detection**: The strategy identifies pivot highs (resistance levels) by scanning price action over a rolling window. A pivot high is a local maximum where the high price is the highest within a defined left and right bar window.
+1. **Pivot Point Detection**: 
+   - The strategy identifies pivot highs (resistance levels) by scanning price action over a rolling window
+   - A pivot high is a local maximum where the high price is the highest within a defined window
+   - Window: 6 bars to the left, 9 bars to the right (total 16-bar window)
+   - Pivot values are forward-filled to create continuous resistance levels
 
-2. **Breakout Entry**: When price breaks above a detected resistance level with:
-   - **Trend confirmation**: Price must be above the 200-period EMA (uptrend filter)
-   - **Volume confirmation**: Volume oscillator exceeds threshold OR price is above 20-period EMA
-   - **Cooldown period**: Minimum time between trades to avoid overtrading
+2. **Breakout Entry Signal**:
+   - **Price Action**: Current close price breaks above the detected resistance level
+   - **Previous Bar Check**: Previous bar's close must be at or below resistance (confirms breakout)
+   - **Trend Filter**: Price must be above 200-period EMA (ensures uptrend)
+   - **Volume Confirmation**: Either:
+     - Volume Oscillator > 31.0 (5-period EMA of volume vs 10-period EMA)
+     - OR price is above 20-period EMA (momentum confirmation)
+   - **Cooldown**: Minimum 21 minutes between trades to prevent overtrading
 
-3. **Profit Target Exit**: Positions are closed when profit reaches 4.2%, ensuring consistent profit-taking.
+3. **Profit Target Exit**:
+   - Positions are automatically closed when profit reaches 4.2%
+   - No stop loss (profit-target only strategy)
+   - Exit executes at current market price when target is hit
 
-#### Implementation Details
+#### Detailed Implementation for ZEC/USD
 
-- **Data Source**: Historical OHLCV data from Binance API (1-minute candles)
-- **Indicators**:
-  - 200-period EMA (trend filter)
-  - 20-period EMA (momentum confirmation)
-  - Volume Oscillator (5 EMA vs 10 EMA of volume)
-  - Pivot High/Low detection (6 bars left, 9 bars right)
-- **Entry Conditions**: Price breaks above pivot high resistance + trend + volume confirmation
-- **Exit Conditions**: Fixed profit target of 4.2%
-- **Risk Management**: 21-bar cooldown between trades, long-only (no short selling)
+**Data Pipeline**:
+- Fetches 500+ 1-minute candles from Binance API (ZECUSDT pair)
+- Requires minimum 250 candles for indicator calculation
+- Updates every minute with new candle data
 
-#### Strategy Parameters
+**Technical Indicators**:
+1. **200-Period EMA**: Long-term trend filter
+   - Only trades when `close > ema200` (uptrend confirmation)
+   - Prevents trading in downtrends
+
+2. **20-Period EMA**: Short-term momentum indicator
+   - Used as alternative volume confirmation
+   - If price > ema20, momentum is considered strong
+
+3. **Volume Oscillator**: 
+   - Formula: `100 * (vol_ema5 - vol_ema10) / vol_ema10`
+   - Measures volume momentum
+   - Threshold: 31.0 (indicates strong volume surge)
+
+4. **Pivot High Detection**:
+   - Algorithm scans each bar as potential pivot center
+   - Checks if bar's high is maximum in [i-6 : i+9] window
+   - Records pivot value at position i+9 (forward-looking)
+   - Values are shifted and forward-filled to create continuous resistance line
+
+**Entry Signal Generation**:
+```
+IF (current_close > pivot_high_resistance) AND
+   (previous_close <= pivot_high_resistance) AND
+   (current_close > ema200) AND
+   ((volume_oscillator > 31.0) OR (current_close > ema20)) AND
+   (time_since_last_trade >= 21 minutes)
+THEN
+   ENTER LONG POSITION
+```
+
+**Position Sizing**:
+- Uses all available cash (minus $50 reserve)
+- Accounts for trading fees (0.1% per trade)
+- Rounds quantity to exchange step sizes
+- Validates against minimum order size and notional requirements
+
+**Exit Logic**:
+```
+IF (current_price - entry_price) / entry_price >= 0.042 (4.2%)
+THEN
+   SELL ENTIRE POSITION
+```
+
+**Risk Management**:
+- **Long-only**: No short selling (competition requirement)
+- **Cooldown**: 21-minute minimum between trades
+- **Position Limit**: One position at a time (all-in sizing)
+- **Fee Accounting**: 0.1% fee deducted from each trade
+
+#### Strategy Parameters (ZEC/USD)
 
 - `left_bars`: 6 (pivot detection window - left side)
 - `right_bars`: 9 (pivot detection window - right side)
 - `volume_threshold`: 31.0 (minimum volume oscillator for entry)
 - `cooldown_bars`: 21 (minutes between trades)
 - `profit_target`: 4.2% (take profit level)
+- `trading_pair`: ZEC/USD (exclusively)
+- `timeframe`: 1 minute
+- `min_candles_required`: 250 (for indicator calculation)
 
 #### Note on BTC Position
 
